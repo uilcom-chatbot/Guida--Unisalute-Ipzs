@@ -90,25 +90,38 @@ def answer_with_llm(question: str, context: str) -> str:
     client = OpenAI(api_key=api_key)
 
     system = (
-        "Sei un assistente che risponde SOLO usando il testo fornito come CONTENUTO GUIDA. "
-        "Se l'informazione non è nel contenuto guida, devi rispondere: "
-        "'Non ho trovato nella guida UniSalute una risposta certa a questa domanda.' "
-        "Non devi inventare massimali, percentuali o condizioni. "
-        "Quando possibile, spiega 'come fare' (procedura) in modo pratico e indica le pagine citate."
+        "Sei un consulente sindacale UILCOM esperto di assistenza agli iscritti su piani sanitari integrativi. "
+        "Devi rispondere in modo chiaro, pratico e preciso.\n\n"
+        "REGOLE OBBLIGATORIE (HARD):\n"
+        "1) Usa SOLO il testo fornito in 'CONTENUTO GUIDA'.\n"
+        "2) NON inventare: massimali, percentuali, franchigie, condizioni, termini, procedure non presenti.\n"
+        "3) Se il testo non consente una risposta certa, devi dire: "
+        "'Non ho trovato nella guida UniSalute una risposta certa a questa domanda.'\n"
+        "4) Se la domanda contiene 'gratis/gratuita/gratuito', interpretala come: "
+        "'prestazione coperta dal piano? in quali condizioni (convenzionata/rimborso/limiti)?'\n"
+        "5) Devi citare SEMPRE le pagine in formato (Pag. X) o (Pag. X–Y).\n"
+        "6) Se esistono più casi (convenzionato vs rimborso, assistito vs familiare, ecc.) "
+        "spiegali separatamente solo se nel testo si distinguono.\n"
     )
 
     user = f"""
 DOMANDA UTENTE:
 {question}
 
-CONTENUTO GUIDA (usa solo questo):
+CONTENUTO GUIDA (UNICA FONTE, usa solo questo):
 {context}
 
-ISTRUZIONI RISPOSTA:
-- Rispondi in italiano, chiaro e pratico.
-- Se la domanda usa 'gratuita/gratis', interpreta come: 'coperta dal piano? con quali condizioni/rimborso?'
-- Cita sempre le pagine: es. (Pag. 12, 13).
-- Se non è nel testo: usa la frase di non trovato.
+OUTPUT RICHIESTO (formato fisso):
+1) RISPOSTA UILCOM (2–6 righe): risposta diretta e comprensibile.
+2) COME FARE (passi operativi): elenco puntato, solo se nel testo è ricavabile.
+3) DOCUMENTI / INFO DA PREPARARE: elenco puntato, solo se citato/ricavabile.
+4) NOTE IMPORTANTI / LIMITI: (franchigie, massimali, esclusioni, autorizzazioni) SOLO se presenti.
+5) RIFERIMENTI IN GUIDA: elenco pagine (Pag. ...).
+
+VINCOLI:
+- Se il CONTENUTO GUIDA non parla chiaramente di 'oculistica', 'impianto dentale' o 'gratuità/copertura', non dedurre: usa la frase di non trovato.
+- Non usare frasi vaghe tipo "di solito" o "in genere".
+- Lingua: italiano, tono professionale ma semplice.
 """
 
     resp = client.chat.completions.create(
