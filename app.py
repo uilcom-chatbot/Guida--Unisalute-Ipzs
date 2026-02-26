@@ -139,7 +139,7 @@ VINCOLI:
 # -------------------------
 with st.sidebar:
     st.header("⚙️ Impostazioni")
-    top_k = st.slider("Pagine candidate (top-k)", 3, 12, 6)
+    top_k = st.slider("Pagine candidate (top-k)", 3, 12, 8)
     strict = st.toggle("Modalità rigorosa (consigliata)", value=True)
     show_sources = st.toggle("Mostra sempre le fonti", value=True)
     st.caption("Se metti OPENAI_API_KEY nei Secrets, la chatbot scrive una risposta completa. Altrimenti mostra estratti trovati.")
