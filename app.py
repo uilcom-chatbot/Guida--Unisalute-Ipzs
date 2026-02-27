@@ -75,12 +75,22 @@ def pages_ref_string(pages: List[int]) -> str:
     return ", ".join(chunks)
 
 def get_openai_key() -> str:
+    # Legge prima dai Secrets, poi dalle variabili ambiente.
+    # (Robusto: gestisce anche casi strani di secrets/non disponibili)
     key = ""
-    try:
-        key = st.secrets.get("OPENAI_API_KEY", "")
-    except Exception:
-        key = ""
-    return key or os.getenv("OPENAI_API_KEY", "")
+    if hasattr(st, "secrets"):
+        try:
+            # prova con chiave standard
+            key = st.secrets["OPENAI_API_KEY"]
+        except Exception:
+            # prova anche con get
+            try:
+                key = st.secrets.get("OPENAI_API_KEY", "")
+            except Exception:
+                key = ""
+    if not key:
+        key = os.getenv("OPENAI_API_KEY", "") or os.getenv("OPENAI_APIKEY", "")
+    return (key or "").strip()
 
 
 # -------------------------
@@ -236,7 +246,11 @@ with st.sidebar:
     min_hits = st.slider("Soglia minima (quanti blocchi devono combaciare)", 1, 5, 1)
     st.divider()
     st.caption("Per risposte complete serve OPENAI_API_KEY nei Secrets di Streamlit.")
-
+key_check = get_openai_key()
+if key_check and key_check.startswith("sk-"):
+    st.success("✅ Chiave OpenAI rilevata")
+else:
+    st.error("❌ Chiave OpenAI NON rilevata (controlla Secrets)")
 # indicizzazione
 try:
     chunks, bm25 = build_bm25_index(PDF_PATH, chunk_size=chunk_size, overlap=overlap)
