@@ -16,9 +16,9 @@ import streamlit as st
 from rank_bm25 import BM25Okapi
 
 try:
-    from anthropic import Anthropic
+    from openai import OpenAI
 except Exception:
-    Anthropic = None
+    OpenAI = None
 
 # ── Config ────────────────────────────────────────────────────────────────────
 CHUNKS_PATH = "chunks_data.json"
@@ -220,8 +220,8 @@ def retrieve(chunks, bm25, question: str, top_k: int = 12):
 # ── LLM Answer ────────────────────────────────────────────────────────────────
 def llm_answer(question: str, retrieved) -> str:
     api_key = get_api_key()
-    if not api_key or Anthropic is None:
-        return "⚠️ Chiave API non trovata. Aggiungi ANTHROPIC_API_KEY nei Secrets di Streamlit."
+    if not api_key or OpenAI is None:
+        return "⚠️ Chiave API non trovata. Aggiungi OPENAI_API_KEY nei Secrets di Streamlit."
 
     context = "\n\n".join(f"[Pag. {c.page}] {c.text}" for _, c in retrieved)
 
@@ -247,14 +247,17 @@ def llm_answer(question: str, retrieved) -> str:
 
     user = f"DOMANDA: {question}\n\nCONTENUTO GUIDA (UNICA FONTE):\n{context}"
 
-    client = Anthropic(api_key=api_key)
-    resp = client.messages.create(
-        model="claude-sonnet-4-20250514",
+    client = OpenAI(api_key=api_key)
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.1,
         max_tokens=1000,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
     )
-    return resp.content[0].text.strip()
+    return resp.choices[0].message.content.strip()
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -342,4 +345,3 @@ if question:
         st.markdown(answer)
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
-    
