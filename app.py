@@ -55,6 +55,7 @@ SYNONYMS = {
     "sangue": ["ematologici", "diagnostici", "accertamenti", "laboratorio"],
     "radiografia": ["radiologica", "diagnostica", "accertamenti", "rx"],
     "risonanza": ["risonanza", "magnetica", "alta", "specializzazione"],
+    "risonanze": ["risonanza", "magnetica", "alta", "specializzazione"],
     "tac": ["tac", "diagnostici", "alta", "specializzazione"],
     "rimborso": ["rimborso", "rimborsate", "rimborsi", "richiesta"],
     "rimborsare": ["rimborso", "rimborsate", "rimborsi"],
@@ -72,7 +73,7 @@ INTENTS = [
     ("lenti", [(40, 40)], ["occhiali", "lenti", "vista", "visita oculistica", "oculista", "miopia", "astigmatismo", "presbiopia", "visus"]),
     ("fisioterapia", [(43, 44), (65, 66), (73, 75)], ["fisioterapia", "fisioterap", "riabilitazione", "riabilitativ", "fisiatra", "massaggio", "tecar", "laserterapia"]),
     ("ricovero", [(20, 32), (45, 60)], ["ricovero", "operazione", "intervento chirurgico", "day hospital", "day-hospital", "parto", "aborto", "degenza", "accompagnatore", "ambulanza", "trasporto sanitario", "indennita sostitutiva", "ospedalizzazione domiciliare", "trapianto"]),
-    ("alta_specializzazione", [(32, 35), (60, 63)], ["alta specializzazione", "risonanza", "tac", "pet", "scintigrafia", "angiografia", "mammografia", "ecodoppler", "ecocolordoppler", "radiografia", "polisonnografia", "gastroscopia", "colonscopia", "campimetria"]),
+    ("alta_specializzazione", [(32, 35), (60, 63)], ["alta specializzazione", "risonanza", "risonanze", "tac", "pet", "scintigrafia", "angiografia", "mammografia", "ecodoppler", "ecocolordoppler", "radiografia", "polisonnografia", "gastroscopia", "colonscopia", "campimetria"]),
     ("visite_esami", [(35, 38), (63, 64)], ["visita", "specialista", "specialistica", "esame", "esami", "analisi", "diagnostica", "accertamento", "ecografia", "allergologo", "allergologia", "cardiologo", "neurologo", "ortopedico", "dermatologo", "ginecologo", "urologo", "sangue"]),
     ("protesi", [(38, 39), (65, 66)], ["protesi ortopedica", "protesi acustica", "apparecchio acustico", "carrozzina", "ausilio ortopedico"]),
     ("prevenzione", [(38, 43)], ["prevenzione", "check up", "check-up", "diagnostiche particolari", "sindrome metabolica"]),
@@ -87,6 +88,7 @@ INTENTS = [
 
 FOCUS_RULES = [
     (["impianto", "implantologia"], [71, 72]),
+    (["risonanza", "risonanze", "risonanza magnetica"], [34, 35, 61, 62, 63]),
     (["occhiali", "lenti", "montatura"], [40]),
     (["pulizia dei denti", "igiene orale", "tartaro"], [66, 67]),
     (["fisioterapia", "fisioterap", "riabilitativ"], [43, 44, 73, 74]),
@@ -260,6 +262,38 @@ def source_pages(chunks) -> str:
 def deterministic_answer(question: str, chunks):
     """Risposte certe per casi in cui non devono essere omesse condizioni essenziali."""
     q = normalize(question)
+
+    if "risonanz" in q:
+        evidence = []
+        for index, chunk in enumerate(chunks):
+            page = int(chunk.get("page", 0) or 0)
+            text = normalize(chunk.get("text", ""))
+            if page == 34 and "risonanza" in text:
+                evidence.append((f"F{index + 1}", chunk))
+            elif page == 35 and "2.000,00 per nucleo familiare" in text:
+                evidence.append((f"F{index + 1}", chunk))
+            elif page == 63 and "2.000,00 per nucleo familiare" in text:
+                evidence.append((f"F{index + 1}", chunk))
+
+        has_service = any(int(chunk.get("page", 0) or 0) == 34 for _, chunk in evidence)
+        has_limit = any(int(chunk.get("page", 0) or 0) in {35, 63} for _, chunk in evidence)
+        if has_service and has_limit:
+            return {
+                "esito": "Coperta con condizioni",
+                "risposta": (
+                    "Il massimale è di 2.000 € all’anno per nucleo familiare. "
+                    "È il massimale complessivo condiviso da tutte le prestazioni di Alta specializzazione, "
+                    "tra cui rientra la risonanza: non è un limite di 2.000 € per ogni singola risonanza."
+                ),
+                "condizioni": [
+                    "È necessaria una prescrizione medica con quesito diagnostico o patologia.",
+                    "In una struttura convenzionata UniSalute non si applicano franchigie o scoperti.",
+                ],
+                "come_fare": [],
+                "da_verificare": [],
+                "fonti": evidence[:3],
+            }
+
     if "impiant" not in q or not any(term in q for term in ("dent", "odontoiatr", "molare")):
         return None
 
