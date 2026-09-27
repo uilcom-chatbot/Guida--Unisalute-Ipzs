@@ -257,6 +257,50 @@ def source_pages(chunks) -> str:
     return ", ".join(f"pag. {a}" if a == b else f"pagg. {a}–{b}" for a, b in ranges)
 
 
+def deterministic_answer(question: str, chunks):
+    """Risposte certe per casi in cui non devono essere omesse condizioni essenziali."""
+    q = normalize(question)
+    if "impiant" not in q or not any(term in q for term in ("dent", "odontoiatr", "molare")):
+        return None
+
+    evidence = []
+    page_71_added = page_72_added = False
+    for index, chunk in enumerate(chunks):
+        page = int(chunk.get("page", 0) or 0)
+        text = normalize(chunk.get("text", ""))
+        if page == 71 and not page_71_added and ("implantologia" in text or "applicazione di un impianto" in text):
+            evidence.append((f"F{index + 1}", chunk))
+            page_71_added = True
+        elif page == 72 and not page_72_added and "massimale" in text:
+            evidence.append((f"F{index + 1}", chunk))
+            page_72_added = True
+
+    if not page_71_added:
+        return None
+
+    return {
+        "esito": "Coperta con condizioni",
+        "risposta": (
+            "Sì, ma l’implantologia è coperta esclusivamente per il dipendente titolare, "
+            "fino a 350 € per anno assicurativo. Non è prevista per i familiari."
+        ),
+        "condizioni": [
+            "Massimale di 350 € per anno assicurativo.",
+            "Garanzia riservata al solo dipendente titolare.",
+            "Utilizzo esclusivamente in forma diretta, presso struttura e personale convenzionati con UniSalute.",
+            "Nessuno scoperto o franchigia entro il massimale; l’eventuale eccedenza resta a carico del lavoratore.",
+            "Sono compresi posizionamento dell’impianto, elemento definitivo ed elemento provvisorio.",
+            "Per la liquidazione servono le immagini radiografiche precedenti e successive alla riabilitazione implantoprotesica.",
+        ],
+        "come_fare": [
+            "Individua una struttura convenzionata UniSalute e richiedi la prestazione in forma diretta.",
+            "Conserva le immagini radiografiche richieste dal Piano.",
+        ],
+        "da_verificare": [],
+        "fonti": evidence[:2],
+    }
+
+
 def answer(question: str, chunks, client: OpenAI, previous_question: str = ""):
     if not chunks:
         return {
@@ -264,6 +308,10 @@ def answer(question: str, chunks, client: OpenAI, previous_question: str = ""):
             "risposta": "Non ho trovato nella Guida UniSalute un passaggio sufficiente per rispondere con certezza.",
             "condizioni": [], "come_fare": [], "da_verificare": [], "fonti": [],
         }
+
+    certain = deterministic_answer(question, chunks)
+    if certain:
+        return certain
 
     sources = "\n\n".join(
         f"[F{i}] [Pagina PDF {chunk['page']} | {section_label(int(chunk['page']))}] {chunk['text'][:2200]}"
@@ -283,6 +331,8 @@ REGOLE OBBLIGATORIE:
 8. Ignora blocchi che hanno una parola coincidente ma riguardano un'altra prestazione.
 9. La domanda precedente serve soltanto a capire riferimenti brevi come "e quanto?" o "anche per mia moglie?". Devi rispondere alla domanda attuale.
 10. Non fare diagnosi, non chiedere dati sanitari personali e non citare pagine nel testo: le aggiunge l'app.
+11. Prima di produrre il JSON, verifica silenziosamente di aver risposto a OGNI parte esplicita della domanda.
+12. Quando la prestazione è soltanto in forma diretta, non chiamarla rimborso: indica rete convenzionata, eventuale scoperto/franchigia, massimale ed eccedenza a carico dell’assicurato.
 
 Restituisci soltanto JSON valido con queste chiavi:
 - esito: una fra "Coperta", "Coperta con condizioni", "Non coperta", "Procedura", "Serve verifica";
