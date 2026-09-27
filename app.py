@@ -16,7 +16,8 @@ from openai import OpenAI
 
 APP_TITLE = "🏥 Assistente UniSalute IPZS 2026"
 MODEL = "gpt-4o-mini"
-TOP_K = 12
+TOP_K = 16
+MAX_CONTEXT_CHUNKS = 26
 
 # I 200 blocchi della guida sono compressi e incorporati nel file, così non
 # servono chunks_data.json o embeddings.json separati.
@@ -70,11 +71,11 @@ INTENTS = [
     ("assicurati", [(17, 20), (88, 89)], ["chi e coperto", "familiari", "familiare", "coniuge", "moglie", "marito", "convivente", "figlio", "figli", "nucleo", "estensione"]),
     ("odontoiatria", [(39, 40), (66, 72)], ["dentista", "dente", "denti", "dentale", "odontoiatr", "impianto", "implantologia", "igiene orale", "pulizia dei denti", "tartaro", "carie", "otturazione", "estrazione", "apparecchio", "ortodonzia", "panoramica"]),
     ("scheda_odontoiatrica", [(105, 109)], ["scheda anamnestica", "anamnesi odontoiatrica", "compilare la scheda", "modulo odontoiatrico"]),
-    ("lenti", [(40, 40)], ["occhiali", "lenti", "vista", "visita oculistica", "oculista", "miopia", "astigmatismo", "presbiopia", "visus"]),
+    ("lenti", [(40, 40)], ["occhiali", "lenti", "montatura", "lenti a contatto", "miopia", "astigmatismo", "presbiopia", "visus"]),
     ("fisioterapia", [(43, 44), (65, 66), (73, 75)], ["fisioterapia", "fisioterap", "riabilitazione", "riabilitativ", "fisiatra", "massaggio", "tecar", "laserterapia"]),
     ("ricovero", [(20, 32), (45, 60)], ["ricovero", "operazione", "intervento chirurgico", "day hospital", "day-hospital", "parto", "aborto", "degenza", "accompagnatore", "ambulanza", "trasporto sanitario", "indennita sostitutiva", "ospedalizzazione domiciliare", "trapianto"]),
     ("alta_specializzazione", [(32, 35), (60, 63)], ["alta specializzazione", "risonanza", "risonanze", "tac", "pet", "scintigrafia", "angiografia", "mammografia", "ecodoppler", "ecocolordoppler", "radiografia", "polisonnografia", "gastroscopia", "colonscopia", "campimetria"]),
-    ("visite_esami", [(35, 38), (63, 64)], ["visita", "specialista", "specialistica", "esame", "esami", "analisi", "diagnostica", "accertamento", "ecografia", "allergologo", "allergologia", "cardiologo", "neurologo", "ortopedico", "dermatologo", "ginecologo", "urologo", "sangue"]),
+    ("visite_esami", [(35, 38), (63, 64)], ["visita", "specialista", "specialistica", "esame", "esami", "analisi", "diagnostica", "accertamento", "ecografia", "oculista", "oculistica", "allergologo", "allergologia", "cardiologo", "neurologo", "ortopedico", "dermatologo", "ginecologo", "urologo", "sangue"]),
     ("protesi", [(38, 39), (65, 66)], ["protesi ortopedica", "protesi acustica", "apparecchio acustico", "carrozzina", "ausilio ortopedico"]),
     ("prevenzione", [(38, 43)], ["prevenzione", "check up", "check-up", "diagnostiche particolari", "sindrome metabolica"]),
     ("second_opinion", [(40, 43), (72, 73)], ["second opinion", "secondo parere", "parere medico", "seconda opinione"]),
@@ -91,10 +92,44 @@ FOCUS_RULES = [
     (["risonanza", "risonanze", "risonanza magnetica"], [34, 35, 61, 62, 63]),
     (["occhiali", "lenti", "montatura"], [40]),
     (["pulizia dei denti", "igiene orale", "tartaro"], [66, 67]),
-    (["fisioterapia", "fisioterap", "riabilitativ"], [43, 44, 73, 74]),
+    (["otturazione", "carie", "terapie conservative", "cure odontoiatriche"], [39, 40]),
+    (["fisioterapia", "fisioterap", "riabilitativ"], [43, 44, 65, 66, 73, 74]),
     (["cure termali", "termale", "terme"], [44, 45, 74, 75]),
     (["visita", "specialistica", "specialista"], [35, 36, 37, 63, 64]),
+    (["protesi ortopedica", "protesi acustica", "apparecchio acustico", "carrozzina"], [38, 65]),
+    (["sindrome metabolica"], [41, 42, 43]),
+    (["prevenzione", "check up", "check-up", "diagnostiche particolari"], [38, 39]),
+    (["second opinion", "secondo parere", "seconda opinione"], [40, 41, 72, 73]),
+    (["non autosufficienza", "non autosufficiente", "ltc", "badante"], [77, 78, 79, 80, 81, 82, 83, 84]),
 ]
+
+# Pagine che, per ciascuna garanzia, contengono insieme definizione, canali di
+# erogazione, scoperti/franchigie e massimali. Vengono aggiunte al contesto
+# quando pertinenti, così una risposta non dipende da un singolo frammento PDF.
+COMPLETE_CONTEXT_RULES = [
+    (["impianto", "implantologia"], {71, 72}),
+    (["pulizia dei denti", "igiene orale", "tartaro", "ablazione"], {66, 67}),
+    (["infortunio dent", "trauma dent"], {70, 71}),
+    (["otturazione", "carie", "terapie conservative", "cure odontoiatriche"], {39, 40}),
+    (["protesi ortopedica", "protesi acustica", "apparecchio acustico", "carrozzina", "ausilio ortopedico"], {38, 65}),
+    (["occhiali", "lenti", "montatura", "visus"], {40}),
+    (["risonanza", "risonanze", "tac", "pet", "scintigrafia", "angiografia", "alta specializzazione", "radiografia", "polisonnografia", "campimetria"], {32, 33, 34, 35, 60, 61, 62, 63}),
+    (["prevenzione", "check up", "check-up", "diagnostiche particolari"], {38, 39}),
+    (["sindrome metabolica"], {41, 42, 43}),
+    (["second opinion", "secondo parere", "seconda opinione"], {40, 41, 72, 73}),
+    (["cure termali", "termale", "terme"], {44, 45, 74, 75}),
+    (["fisioterapia", "fisioterap", "riabilitazione", "riabilitativ", "tecar", "laserterapia"], {43, 44, 65, 66, 73, 74}),
+    (["odontoiatr", "dentista", "dente", "denti", "carie", "otturazione", "estrazione", "ortodonzia", "apparecchio"], {39, 40, 66, 67, 68, 69, 70, 71, 72}),
+    (["visita", "specialista", "specialistica", "oculista", "cardiologo", "neurologo", "ortopedico", "dermatologo", "ginecologo", "urologo", "analisi", "esame", "accertamento", "ecografia"], {35, 36, 37, 63, 64}),
+    (["ricovero", "operazione", "intervento chirurgico", "day hospital", "day-hospital", "parto", "aborto", "degenza"], {20, 21, 22, 23, 26, 27, 28, 29, 30, 31, 32, 45, 46, 47, 48, 49, 50, 57, 58, 59, 60}),
+    (["non autosufficienza", "non autosufficiente", "ltc", "badante"], {77, 78, 79, 80, 81, 82, 83, 84}),
+]
+
+CONTEXT_COMPLETENESS_MARKERS = (
+    "convenzion", "non convenzion", "servizio sanitario nazionale", "ticket",
+    "massimale", "scoperto", "franchigia", "prescrizione", "solo titolare",
+    "familiari", "nucleo familiare", "forma diretta", "rimborso",
+)
 
 DOMAIN_MARKERS = [
     "copert", "unisalute", "piano sanitario", "fondo salute", "rimbors", "massimale",
@@ -119,6 +154,15 @@ def normalize(value: str) -> str:
     return "".join(char for char in value if not unicodedata.combining(char))
 
 
+def contains_term(value: str, term: str) -> bool:
+    """Evita falsi positivi come TAC dentro 'spetta' o PET dentro 'aspetta'."""
+    value_normalized = normalize(value)
+    term_normalized = normalize(term)
+    if len(term_normalized) <= 4 and " " not in term_normalized:
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(term_normalized)}(?![a-z0-9])", value_normalized))
+    return term_normalized in value_normalized
+
+
 def tokenize(value: str) -> list[str]:
     seen = set()
     result = []
@@ -133,16 +177,20 @@ def expand_query(question: str) -> str:
     lower = normalize(question)
     extras = []
     for keyword, terms in SYNONYMS.items():
-        if normalize(keyword) in lower:
+        if keyword == "apparecchio" and "acustic" in lower:
+            continue
+        if contains_term(lower, keyword):
             extras.extend(terms)
     return question + (" " + " ".join(extras) if extras else "")
 
 
 def detect_intents(question: str):
     q = normalize(question)
-    matches = [item for item in INTENTS if any(normalize(term) in q for term in item[2])]
+    matches = [item for item in INTENTS if any(contains_term(q, term) for term in item[2])]
     if len(matches) > 1 and not re.search(r"come|dove|invia|caric|stato|tempi|document", q):
         matches = [item for item in matches if item[0] != "accesso"]
+    if "acustic" in q:
+        matches = [item for item in matches if item[0] != "odontoiatria"]
     return matches
 
 
@@ -211,12 +259,19 @@ def retrieve(question: str, limit: int = TOP_K):
     focus_pages = {
         page
         for terms, pages in FOCUS_RULES
-        if any(normalize(term) in q_normalized for term in terms)
+        if any(contains_term(q_normalized, term) for term in terms)
         for page in pages
     }
+    is_physiotherapy = any(term in q_normalized for term in ("fisioterap", "riabilitativ", "riabilitazione"))
+    if is_physiotherapy and "infortun" in q_normalized:
+        focus_pages = {65, 66}
+    elif is_physiotherapy and "malatt" in q_normalized:
+        focus_pages = {43, 44, 73, 74}
     scored = []
     for index, (chunk, base_score) in enumerate(zip(chunks, base_scores)):
         page = int(chunk.get("page", 0) or 0)
+        if focus_pages and page not in focus_pages:
+            continue
         text_normalized = normalize(chunk.get("text", ""))
         inside = bool(allowed_ranges) and in_ranges(page, allowed_ranges)
         hits = sum(1 for token in core_tokens if normalize(token) in text_normalized)
@@ -241,6 +296,36 @@ def retrieve(question: str, limit: int = TOP_K):
         selected.append({**chunk, "score": score})
         if len(selected) >= limit:
             break
+
+    # Completa il fascicolo della garanzia con le clausole economiche e i tre
+    # canali di erogazione. Questi frammenti possono avere poche parole in
+    # comune con la domanda, ma sono indispensabili per una risposta completa.
+    context_pages = set()
+    for terms, pages in COMPLETE_CONTEXT_RULES:
+        if any(contains_term(q_normalized, term) for term in terms):
+            context_pages = set(pages)
+            break
+    if is_physiotherapy and "infortun" in q_normalized:
+        context_pages = {65, 66}
+    elif is_physiotherapy and "malatt" in q_normalized:
+        context_pages = {43, 44, 73, 74}
+    if context_pages and selected:
+        for chunk in chunks:
+            page = int(chunk.get("page", 0) or 0)
+            text_normalized = normalize(chunk.get("text", ""))
+            if page not in context_pages:
+                continue
+            if not any(marker in text_normalized for marker in CONTEXT_COMPLETENESS_MARKERS):
+                continue
+            signature = f"{chunk.get('page')}|{text_normalized[:120]}"
+            if signature in seen:
+                continue
+            seen.add(signature)
+            selected.append({**chunk, "score": 0.2})
+            if len(selected) >= MAX_CONTEXT_CHUNKS:
+                break
+
+    selected.sort(key=lambda item: (int(item.get("page", 0) or 0), -float(item.get("score", 0))))
     return selected, "ok" if selected else "weak"
 
 
@@ -264,34 +349,68 @@ def deterministic_answer(question: str, chunks):
     q = normalize(question)
 
     if "risonanz" in q:
-        evidence = []
+        evidence_by_page = {}
         for index, chunk in enumerate(chunks):
             page = int(chunk.get("page", 0) or 0)
             text = normalize(chunk.get("text", ""))
-            if page == 34 and "risonanza" in text:
-                evidence.append((f"F{index + 1}", chunk))
-            elif page == 35 and "2.000,00 per nucleo familiare" in text:
-                evidence.append((f"F{index + 1}", chunk))
-            elif page == 63 and "2.000,00 per nucleo familiare" in text:
-                evidence.append((f"F{index + 1}", chunk))
+            relevant = (
+                (page == 34 and "risonanza" in text)
+                or (page == 35 and "2.000,00 per nucleo familiare" in text)
+                or (page == 62 and ("non convenzionato" in text or "scoperto del 20%" in text))
+                or (page == 63 and ("minimo non indennizzabile" in text or "2.000,00 per nucleo familiare" in text))
+            )
+            if relevant and page not in evidence_by_page:
+                evidence_by_page[page] = (f"F{index + 1}", chunk)
 
-        has_service = any(int(chunk.get("page", 0) or 0) == 34 for _, chunk in evidence)
-        has_limit = any(int(chunk.get("page", 0) or 0) in {35, 63} for _, chunk in evidence)
+        has_service = 34 in evidence_by_page
+        has_limit = 35 in evidence_by_page or 63 in evidence_by_page
         if has_service and has_limit:
-            return {
-                "esito": "Coperta con condizioni",
-                "risposta": (
+            non_convenzionata = "non convenzion" in q or "fuori rete" in q
+            convenzionata = "convenzion" in q and not non_convenzionata
+            servizio_pubblico = any(term in q for term in ("servizio sanitario", "ssn", "ticket"))
+
+            if non_convenzionata:
+                response_text = (
+                    "Nella SEZIONE SECONDA, in una struttura non convenzionata anticipi la fattura e, "
+                    "dopo il rimborso, resta a tuo carico il 20% della spesa, con un minimo di 50 € "
+                    "per prestazione o ciclo. Senza il prezzo della risonanza non si può calcolare "
+                    "l’importo finale esatto."
+                )
+                how_to = ["Conserva prescrizione, fattura e documentazione necessaria per chiedere il rimborso."]
+            elif servizio_pubblico:
+                response_text = (
+                    "Nella SEZIONE SECONDA, il ticket del Servizio Sanitario Nazionale per la risonanza "
+                    "viene rimborsato integralmente."
+                )
+                how_to = []
+            elif convenzionata:
+                response_text = (
+                    "In una struttura e con personale convenzionati UniSalute non si applicano franchigie "
+                    "o scoperti: la spesa viene liquidata direttamente da UniSalute, entro il massimale disponibile."
+                )
+                how_to = ["Prenota la prestazione tramite la rete convenzionata UniSalute."]
+            else:
+                response_text = (
                     "Il massimale è di 2.000 € all’anno per nucleo familiare. "
                     "È il massimale complessivo condiviso da tutte le prestazioni di Alta specializzazione, "
                     "tra cui rientra la risonanza: non è un limite di 2.000 € per ogni singola risonanza."
-                ),
+                )
+                how_to = []
+
+            return {
+                "esito": "Coperta con condizioni",
+                "risposta": response_text,
                 "condizioni": [
+                    "STRUTTURA CONVENZIONATA: pagamento diretto UniSalute, senza franchigie o scoperti, entro il massimale disponibile.",
+                    "STRUTTURA NON CONVENZIONATA – SEZIONE SECONDA: rimborso con scoperto del 20% e minimo di 50 € per prestazione/ciclo.",
+                    "STRUTTURA NON CONVENZIONATA – SEZIONE PRIMA: la Guida UniSalute fornita non indica le condizioni fuori rete; va verificata la disciplina del Fondo Salute Sempre.",
+                    "SERVIZIO SANITARIO NAZIONALE – SEZIONE SECONDA: ticket rimborsato integralmente.",
+                    "Massimale complessivo di Alta specializzazione: 2.000 € all’anno per nucleo familiare.",
                     "È necessaria una prescrizione medica con quesito diagnostico o patologia.",
-                    "In una struttura convenzionata UniSalute non si applicano franchigie o scoperti.",
                 ],
-                "come_fare": [],
-                "da_verificare": [],
-                "fonti": evidence[:3],
+                "come_fare": how_to,
+                "da_verificare": ["Se il lavoratore rientra nella SEZIONE PRIMA o nella SEZIONE SECONDA."],
+                "fonti": [evidence_by_page[p] for p in (34, 35, 62, 63) if p in evidence_by_page],
             }
 
     if "impiant" not in q or not any(term in q for term in ("dent", "odontoiatr", "molare")):
@@ -319,9 +438,11 @@ def deterministic_answer(question: str, chunks):
             "fino a 350 € per anno assicurativo. Non è prevista per i familiari."
         ),
         "condizioni": [
+            "STRUTTURA CONVENZIONATA: prestazione ammessa esclusivamente in forma diretta, presso struttura e personale convenzionati con UniSalute.",
+            "STRUTTURA NON CONVENZIONATA: non prevista da questa garanzia, che opera esclusivamente in forma diretta.",
+            "SERVIZIO SANITARIO NAZIONALE: la Guida non indica un rimborso specifico per l’implantologia; va verificato con UniSalute.",
             "Massimale di 350 € per anno assicurativo.",
             "Garanzia riservata al solo dipendente titolare.",
-            "Utilizzo esclusivamente in forma diretta, presso struttura e personale convenzionati con UniSalute.",
             "Nessuno scoperto o franchigia entro il massimale; l’eventuale eccedenza resta a carico del lavoratore.",
             "Sono compresi posizionamento dell’impianto, elemento definitivo ed elemento provvisorio.",
             "Per la liquidazione servono le immagini radiografiche precedenti e successive alla riabilitazione implantoprotesica.",
@@ -358,7 +479,7 @@ REGOLE OBBLIGATORIE:
 1. Rispondi ESATTAMENTE alla domanda attuale. La prima frase contiene la risposta diretta, senza introduzioni generiche.
 2. Se serve un sì/no, inizia con Sì, No o Dipende. Se viene chiesto un importo, limite, scoperto o franchigia, indicalo subito quando è presente.
 3. Non inventare e non completare per supposizione importi, limiti, documenti, beneficiari o procedure.
-4. Distingui sempre: struttura convenzionata, struttura non convenzionata e Servizio Sanitario Nazionale.
+4. Per OGNI domanda su una prestazione, copertura o costo, riporta SEMPRE separatamente le condizioni per: STRUTTURA CONVENZIONATA, STRUTTURA NON CONVENZIONATA e SERVIZIO SANITARIO NAZIONALE. Fallo anche quando l’utente domanda soltanto uno di questi casi. Se i passaggi forniti non disciplinano uno dei tre casi, scrivi esplicitamente che quel caso non è indicato e deve essere verificato; non inventare.
 5. Non confondere la SEZIONE PRIMA (assicurati coperti dal Fondo Salute Sempre) con la SEZIONE SECONDA (assicurati non coperti dal Fondo). Se la risposta cambia e la categoria non è indicata, esponi separatamente entrambi i casi.
 6. Distingui titolare e familiari. Non estendere ai familiari una garanzia prevista per il solo dipendente titolare.
 7. "Gratis" significa: copertura, quota a carico e condizioni. Se la Guida non consente di stabilire uno di questi dati, indica solo quel dato come da verificare.
@@ -367,14 +488,16 @@ REGOLE OBBLIGATORIE:
 10. Non fare diagnosi, non chiedere dati sanitari personali e non citare pagine nel testo: le aggiunge l'app.
 11. Prima di produrre il JSON, verifica silenziosamente di aver risposto a OGNI parte esplicita della domanda.
 12. Quando la prestazione è soltanto in forma diretta, non chiamarla rimborso: indica rete convenzionata, eventuale scoperto/franchigia, massimale ed eccedenza a carico dell’assicurato.
+13. Ogni affermazione su importi, percentuali, massimali, beneficiari, documenti e modalità di erogazione deve indicare uno o più identificatori F che la provano direttamente.
 
 Restituisci soltanto JSON valido con queste chiavi:
 - esito: una fra "Coperta", "Coperta con condizioni", "Non coperta", "Procedura", "Serve verifica";
 - risposta: risposta diretta in 1-4 frasi;
-- condizioni: lista breve di condizioni/importi pertinenti;
+- canali: oggetto con le chiavi convenzionata, non_convenzionata e ssn. Ogni chiave contiene {"testo": "...", "fonti": ["F1"]}. Se il caso non è indicato usa testo "Non indicato nella Guida fornita; da verificare" e fonti vuote;
+- condizioni: lista breve di oggetti {"testo": "massimale/prescrizione/beneficiari pertinenti", "fonti": ["F1"]};
 - come_fare: lista di passaggi operativi solo quando richiesti o indispensabili;
 - da_verificare: lista dei soli dati che la Guida non consente di stabilire;
-- fonti: lista di identificatori F1, F2 ecc. che sostengono davvero la risposta.
+- fonti: lista di identificatori F1, F2 ecc. che sostengono direttamente la risposta iniziale.
 Se non esiste una prova specifica, usa Serve verifica e fonti vuote."""
     previous = f"Domanda precedente: {previous_question}\n" if previous_question else ""
     prompt = f"{previous}Domanda attuale: {question}\n\nPassaggi della Guida:\n{sources}"
@@ -389,33 +512,121 @@ Se non esiste una prova specifica, usa Serve verifica e fonti vuote."""
     outcome = data.get("esito") if data.get("esito") in allowed_outcomes else "Serve verifica"
     response_text = str(data.get("risposta", "")).strip()
 
-    source_indexes = []
-    raw_sources = data.get("fonti", []) if isinstance(data.get("fonti", []), list) else []
-    for raw_source in raw_sources:
-        match = re.fullmatch(r"F(\d+)", str(raw_source))
-        if match and 1 <= int(match.group(1)) <= len(chunks):
-            index = int(match.group(1)) - 1
+    def valid_source_indexes(raw_sources):
+        indexes = []
+        if not isinstance(raw_sources, list):
+            return indexes
+        for raw_source in raw_sources:
+            match = re.fullmatch(r"F(\d+)", str(raw_source))
+            if match and 1 <= int(match.group(1)) <= len(chunks):
+                index = int(match.group(1)) - 1
+                if index not in indexes:
+                    indexes.append(index)
+        return indexes
+
+    def financial_tokens(value: str):
+        tokens = set()
+        patterns = (
+            r"€\s*([0-9][0-9.,]*)",
+            r"([0-9][0-9.,]*)\s*(?:€|euro)",
+            r"([0-9][0-9.,]*)\s*%",
+        )
+        for pattern in patterns:
+            for raw in re.findall(pattern, normalize(value)):
+                compact = raw.replace(".", "").replace(",", ".")
+                if "." in compact:
+                    compact = compact.rstrip("0").rstrip(".")
+                tokens.add(compact or "0")
+        return tokens
+
+    def financial_claims_supported(text: str, indexes) -> bool:
+        claims = financial_tokens(text)
+        if not claims:
+            return True
+        evidence_text = " ".join(chunks[index].get("text", "") for index in indexes)
+        return claims.issubset(financial_tokens(evidence_text))
+
+    source_indexes = valid_source_indexes(data.get("fonti", []))
+    direct_answer_sources = list(source_indexes)
+    unsupported_direct_amount = not financial_claims_supported(response_text, direct_answer_sources)
+
+    conditions = []
+    channel_labels = (
+        ("convenzionata", "STRUTTURA CONVENZIONATA"),
+        ("non_convenzionata", "STRUTTURA NON CONVENZIONATA"),
+        ("ssn", "SERVIZIO SANITARIO NAZIONALE"),
+    )
+    channels = data.get("canali", {}) if isinstance(data.get("canali", {}), dict) else {}
+    combined_question = f"{previous_question} {question}".strip()
+    service_intents = {
+        "odontoiatria", "lenti", "fisioterapia", "ricovero", "alta_specializzazione",
+        "visite_esami", "protesi", "prevenzione", "second_opinion", "termali",
+    }
+    requires_channels = any(intent[0] in service_intents for intent in detect_intents(combined_question))
+    if not requires_channels:
+        channel_labels = ()
+    missing_channels = []
+    for key, label in channel_labels:
+        channel = channels.get(key, {}) if isinstance(channels.get(key, {}), dict) else {}
+        text = str(channel.get("testo", "")).strip()
+        references = valid_source_indexes(channel.get("fonti", []))
+        if not text:
+            missing_channels.append(label)
+            text = "Non indicato nella Guida fornita; da verificare."
+        elif not references and not any(term in normalize(text) for term in ("non indicato", "da verificare", "non specificato")):
+            text = "Dato non sostenuto da un passaggio preciso; da verificare."
+        elif not financial_claims_supported(text, references):
+            text = "Importo o percentuale non confermati dalla fonte indicata; da verificare."
+        conditions.append(f"{label}: {text}")
+        for index in references:
             if index not in source_indexes:
                 source_indexes.append(index)
+
+    raw_conditions = data.get("condizioni", []) if isinstance(data.get("condizioni", []), list) else []
+    for item in raw_conditions[:8]:
+        if isinstance(item, dict):
+            text = str(item.get("testo", "")).strip()
+            references = valid_source_indexes(item.get("fonti", []))
+            if text and references and financial_claims_supported(text, references):
+                conditions.append(text)
+                for index in references:
+                    if index not in source_indexes:
+                        source_indexes.append(index)
+
+    if requires_channels and missing_channels:
+        return {
+            "esito": "Serve verifica",
+            "risposta": "La risposta recuperata non distingue tutti i canali di erogazione richiesti.",
+            "condizioni": conditions, "come_fare": [],
+            "da_verificare": [f"Verificare: {', '.join(missing_channels)}."], "fonti": [],
+        }
+
+    if unsupported_direct_amount:
+        return {
+            "esito": "Serve verifica",
+            "risposta": "L’importo prodotto non risulta confermato dalle fonti citate.",
+            "condizioni": conditions, "come_fare": [],
+            "da_verificare": ["Importo, percentuale o massimale indicato nella risposta."], "fonti": [],
+        }
 
     if not response_text or not source_indexes:
         return {
             "esito": "Serve verifica",
             "risposta": "I passaggi recuperati non consentono di confermare una risposta precisa.",
-            "condizioni": [], "come_fare": [], "da_verificare": [], "fonti": [],
+            "condizioni": conditions, "come_fare": [], "da_verificare": [], "fonti": [],
         }
 
     def clean_list(key):
         value = data.get(key, [])
-        return [str(item).strip() for item in value if str(item).strip()][:7] if isinstance(value, list) else []
+        return [str(item).strip() for item in value if isinstance(item, str) and str(item).strip()][:7] if isinstance(value, list) else []
 
     return {
         "esito": outcome,
         "risposta": response_text,
-        "condizioni": clean_list("condizioni"),
+        "condizioni": conditions,
         "come_fare": clean_list("come_fare"),
         "da_verificare": clean_list("da_verificare"),
-        "fonti": [(f"F{i + 1}", chunks[i]) for i in source_indexes[:5]],
+        "fonti": [(f"F{i + 1}", chunks[i]) for i in source_indexes[:8]],
     }
 
 
